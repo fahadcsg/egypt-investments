@@ -32,4 +32,7 @@ export const api = {
   updatePayment: (id, data) => request(`/payments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deletePayment: (id) => request(`/payments/${id}`, { method: 'DELETE' }),
   getSettlement: () => request('/investor/settlement'),
+  createTransfer: (data) => request('/investor/transfers', { method: 'POST', body: JSON.stringify(data) }),
+  updateTransfer: (id, data) => request(`/investor/transfers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTransfer: (id) => request(`/investor/transfers/${id}`, { method: 'DELETE' }),
 };
