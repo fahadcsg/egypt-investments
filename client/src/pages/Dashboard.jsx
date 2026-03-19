@@ -5,11 +5,13 @@ import { fmtEGP, fmtSAR, fmtNum, fmtDate, pctOf } from '../utils';
 import KPICard from '../components/KPICard';
 import ProgressBar from '../components/ProgressBar';
 import StatusPill from '../components/StatusPill';
+import ShareUpdate from '../components/ShareUpdate';
 
 export default function Dashboard({ user }) {
   const [projects, setProjects] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showShare, setShowShare] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -34,9 +36,14 @@ export default function Dashboard({ user }) {
     <>
       <div className="page-header">
         <h1 className="page-title">Portfolio</h1>
-        {user.role === 'owner' && (
-          <button className="btn btn-primary btn-sm" onClick={() => navigate('/projects/new')}>+ Add Project</button>
-        )}
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          {user.role === 'owner' && (
+            <button className="btn btn-secondary btn-sm" onClick={() => setShowShare(true)}>Share Update</button>
+          )}
+          {user.role === 'owner' && (
+            <button className="btn btn-primary btn-sm" onClick={() => navigate('/projects/new')}>+ Add Project</button>
+          )}
+        </div>
       </div>
 
       <div className="kpi-grid">
@@ -122,6 +129,8 @@ export default function Dashboard({ user }) {
           </div>
         </div>
       )}
+
+      {showShare && <ShareUpdate onClose={() => setShowShare(false)} />}
     </>
   );
 }
