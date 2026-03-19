@@ -4,7 +4,7 @@ import { api } from '../api';
 import { fmtEGP, fmtSAR, fmtNum, fmtDate, fmtRate, pctOf } from '../utils';
 import ProgressBar from '../components/ProgressBar';
 import StatusPill from '../components/StatusPill';
-import ShareUpdate from '../components/ShareUpdate';
+
 
 const PROJECT_COLORS = {
   '#059669': { from: '#059669', to: '#047857' },
@@ -25,7 +25,6 @@ export default function ProjectDetail({ user }) {
   const [loading, setLoading] = useState(true);
   const [editingPayment, setEditingPayment] = useState(null);
   const [showAddPayment, setShowAddPayment] = useState(false);
-  const [showShare, setShowShare] = useState(false);
 
   function load() {
     api.getProject(id).then(setProject).finally(() => setLoading(false));
@@ -100,14 +99,9 @@ export default function ProjectDetail({ user }) {
 
       <div className="card-header">
         <h2 className="section-title" style={{ margin: 0 }}>Payment Schedule</h2>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          {user.role === 'owner' && project.shared && (
-            <button className="btn btn-secondary btn-sm" onClick={() => setShowShare(true)}>Share Update</button>
-          )}
-          {user.role === 'owner' && (
-            <button className="btn btn-primary btn-sm" onClick={() => setShowAddPayment(true)}>+ Add Payment</button>
-          )}
-        </div>
+        {user.role === 'owner' && (
+          <button className="btn btn-primary btn-sm" onClick={() => setShowAddPayment(true)}>+ Add Payment</button>
+        )}
       </div>
 
       <div className="card" style={{ marginTop: '0.5rem' }}>
@@ -156,8 +150,6 @@ export default function ProjectDetail({ user }) {
           onSaved={() => { setShowAddPayment(false); setEditingPayment(null); load(); }}
         />
       )}
-
-      {showShare && <ShareUpdate onClose={() => setShowShare(false)} projectId={id} />}
     </>
   );
 }

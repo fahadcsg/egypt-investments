@@ -21,45 +21,49 @@ function today() {
   return new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export default function ShareUpdate({ onClose, projectId }) {
+export default function ShareUpdate({ onClose }) {
   const [settlement, setSettlement] = useState(null);
-  const [latestPayment, setLatestPayment] = useState(null);
+  const [paidPayments, setPaidPayments] = useState([]);
+  const [selected, setSelected] = useState(new Set());
+  const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const cardRef = useRef(null);
 
   useEffect(() => {
-    Promise.all([
-      api.getSettlement(),
-      api.getPayments()
-    ]).then(([s, payments]) => {
-      setSettlement(s);
-      const paid = payments
-        .filter(p => p.status === 'PAID' && p.shared)
-        .sort((a, b) => b.date.localeCompare(a.date));
-      if (projectId) {
-        setLatestPayment(paid.find(p => p.project_id === projectId) || paid[0] || null);
-      } else {
-        setLatestPayment(paid[0] || null);
-      }
-    }).finally(() => setLoading(false));
-  }, [projectId]);
+    Promise.all([api.getSettlement(), api.getPayments()])
+      .then(([s, payments]) => {
+        setSettlement(s);
+        const paid = payments
+          .filter(p => p.status === 'PAID' && p.shared)
+          .sort((a, b) => b.date.localeCompare(a.date));
+        setPaidPayments(paid);
+        // Pre-select the most recent month's payments
+        if (paid.length > 0) {
+          const latestMonth = paid[0].date;
+          const ids = new Set(paid.filter(p => p.date === latestMonth).map(p => p.id));
+          setSelected(ids);
+        }
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
+  // --- Loading / empty states ---
   if (loading) {
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div className="modal" onClick={e => e.stopPropagation()}>
-          <div className="loading-screen">Preparing share card...</div>
+          <div className="loading-screen">Loading payments...</div>
         </div>
       </div>
     );
   }
 
-  if (!settlement || !latestPayment) {
+  if (!settlement || paidPayments.length === 0) {
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div className="modal" onClick={e => e.stopPropagation()}>
-          <div className="empty-state">No payment data to share</div>
+          <div className="empty-state">No shared paid payments to share</div>
           <div className="modal-actions">
             <button className="btn btn-secondary" onClick={onClose}>Close</button>
           </div>
@@ -68,41 +72,76 @@ export default function ShareUpdate({ onClose, projectId }) {
     );
   }
 
+  // --- Helpers ---
+  function togglePayment(id) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleMonth(monthPayments) {
+    const ids = monthPayments.map(p => p.id);
+    const allSelected = ids.every(id => selected.has(id));
+    setSelected(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => allSelected ? next.delete(id) : next.add(id));
+      return next;
+    });
+  }
+
+  // Group payments by month
+  const months = [];
+  const monthMap = new Map();
+  for (const p of paidPayments) {
+    if (!monthMap.has(p.date)) {
+      monthMap.set(p.date, []);
+      months.push(p.date);
+    }
+    monthMap.get(p.date).push(p);
+  }
+
+  const selectedPayments = paidPayments.filter(p => selected.has(p.id));
   const { summary } = settlement;
   const bv50 = summary.bv_total_sar / 2;
   const mv50 = summary.mv_total_sar / 2;
   const bvRemaining = bv50 - summary.bv_ali_transferred;
   const mvRemaining = mv50 - summary.mv_ali_transferred;
 
+  // --- Text builder ---
   function buildText() {
-    const p = latestPayment;
-    const lines = [
-      `🏠 Egypt Investments Update`,
-      `✅ Payment made — ${p.project_name}`,
-      `📅 ${fmtDate(p.date)} installment`,
-      `💰 ${fmt(p.egp_amount)} EGP (${fmt(p.sar_transferred)} SAR @ ${rate(p.egp_amount, p.sar_transferred)})`,
-      ``,
-      `📊 Settlement:`,
-      `- BV remaining: ${fmt(bvRemaining)} SAR`,
-      `- MV remaining: ${fmt(mvRemaining)} SAR`,
-      `- Total remaining: ${fmt(summary.ali_remaining)} SAR`,
-      ``,
-      `Full details: https://egypt.almordi.com`,
-    ];
+    const lines = ['🏠 Egypt Investments Update', ''];
+    if (selectedPayments.length === 1) {
+      const p = selectedPayments[0];
+      lines.push(`✅ Payment made — ${p.project_name}`);
+      lines.push(`📅 ${fmtDate(p.date)} installment`);
+      lines.push(`💰 ${fmt(p.egp_amount)} EGP (${fmt(p.sar_transferred)} SAR @ ${rate(p.egp_amount, p.sar_transferred)})`);
+    } else {
+      lines.push(`✅ ${selectedPayments.length} payments made:`);
+      for (const p of selectedPayments) {
+        lines.push(`  • ${p.project_name} — ${fmt(p.egp_amount)} EGP (${fmt(p.sar_transferred)} SAR @ ${rate(p.egp_amount, p.sar_transferred)})`);
+      }
+    }
+    lines.push('');
+    lines.push('📊 Settlement:');
+    lines.push(`- BV remaining: ${fmt(bvRemaining)} SAR`);
+    lines.push(`- MV remaining: ${fmt(mvRemaining)} SAR`);
+    lines.push(`- Total remaining: ${fmt(summary.ali_remaining)} SAR`);
+    lines.push('');
+    lines.push('Full details: https://egypt.almordi.com');
     return lines.join('\n');
   }
 
+  // --- Actions ---
   async function handleDownload() {
     if (!cardRef.current) return;
     setGenerating(true);
     try {
-      const canvas = await html2canvas(cardRef.current, {
-        backgroundColor: null,
-        scale: 2,
-        useCORS: true,
-      });
+      const canvas = await html2canvas(cardRef.current, { backgroundColor: null, scale: 2, useCORS: true });
       const link = document.createElement('a');
-      link.download = `egypt-update-${latestPayment.date}.png`;
+      link.download = `egypt-update-${selectedPayments[0]?.date || 'share'}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
     } finally {
@@ -114,28 +153,21 @@ export default function ShareUpdate({ onClose, projectId }) {
     const text = buildText();
     if (navigator.share) {
       try {
-        if (!cardRef.current) {
-          await navigator.share({ text });
-          return;
-        }
+        if (!cardRef.current) { await navigator.share({ text }); return; }
         setGenerating(true);
-        const canvas = await html2canvas(cardRef.current, {
-          backgroundColor: null,
-          scale: 2,
-          useCORS: true,
-        });
+        const canvas = await html2canvas(cardRef.current, { backgroundColor: null, scale: 2, useCORS: true });
         const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
-        const file = new File([blob], `egypt-update-${latestPayment.date}.png`, { type: 'image/png' });
+        const file = new File([blob], `egypt-update.png`, { type: 'image/png' });
         setGenerating(false);
         await navigator.share({ text, files: [file] });
       } catch (e) {
         setGenerating(false);
         if (e.name !== 'AbortError') {
-          window.open('https://wa.me/?text=' + encodeURIComponent(buildText()));
+          window.open('https://wa.me/?text=' + encodeURIComponent(text));
         }
       }
     } else {
-      window.open('https://wa.me/?text=' + encodeURIComponent(buildText()));
+      window.open('https://wa.me/?text=' + encodeURIComponent(text));
     }
   }
 
@@ -143,9 +175,7 @@ export default function ShareUpdate({ onClose, projectId }) {
     navigator.clipboard.writeText(buildText());
   }
 
-  const p = latestPayment;
-
-  // Styles as objects
+  // --- Card styles ---
   const cardStyle = {
     width: '420px',
     background: 'linear-gradient(135deg, #0c0f1a 0%, #1e1b4b 60%, #312e81 100%)',
@@ -157,122 +187,147 @@ export default function ShareUpdate({ onClose, projectId }) {
     overflow: 'hidden',
   };
   const glowStyle = {
-    position: 'absolute',
-    top: '-40%',
-    right: '-20%',
-    width: '260px',
-    height: '260px',
+    position: 'absolute', top: '-40%', right: '-20%', width: '260px', height: '260px',
     background: 'radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 70%)',
     pointerEvents: 'none',
   };
   const headerStyle = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '10px',
-    marginBottom: '4px',
-    fontSize: '16px',
-    fontWeight: 700,
-    letterSpacing: '-0.01em',
+    display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px',
+    fontSize: '16px', fontWeight: 700, letterSpacing: '-0.01em',
   };
   const subHeaderStyle = {
-    fontSize: '12px',
-    color: 'rgba(255,255,255,0.45)',
-    marginBottom: '20px',
-    fontWeight: 500,
+    fontSize: '12px', color: 'rgba(255,255,255,0.45)', marginBottom: '20px', fontWeight: 500,
   };
-  const dividerStyle = {
-    height: '1px',
-    background: 'rgba(255,255,255,0.1)',
-    margin: '16px 0',
-  };
+  const dividerStyle = { height: '1px', background: 'rgba(255,255,255,0.1)', margin: '16px 0' };
   const sectionLabelStyle = {
-    fontSize: '10px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.1em',
-    color: 'rgba(255,255,255,0.4)',
-    fontWeight: 600,
-    marginBottom: '10px',
+    fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em',
+    color: 'rgba(255,255,255,0.4)', fontWeight: 600, marginBottom: '10px',
   };
-  const paymentRowStyle = {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '4px',
-  };
-  const projectNameStyle = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    fontSize: '14px',
-    fontWeight: 600,
-  };
-  const amountStyle = {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '14px',
-    fontWeight: 600,
-  };
-  const sarSubStyle = {
-    fontSize: '12px',
-    color: 'rgba(255,255,255,0.5)',
-    fontFamily: "'JetBrains Mono', monospace",
-  };
-  const groupStyle = {
-    marginBottom: '14px',
-  };
-  const groupNameStyle = {
-    fontSize: '13px',
-    fontWeight: 600,
-    marginBottom: '6px',
-  };
+  const mono = "'JetBrains Mono', monospace";
   const rowStyle = {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '12px',
-    color: 'rgba(255,255,255,0.65)',
-    lineHeight: '1.8',
-    fontFamily: "'JetBrains Mono', monospace",
+    display: 'flex', justifyContent: 'space-between', fontSize: '12px',
+    color: 'rgba(255,255,255,0.65)', lineHeight: '1.8', fontFamily: mono,
   };
+  const groupStyle = { marginBottom: '14px' };
+  const groupNameStyle = { fontSize: '13px', fontWeight: 600, marginBottom: '6px' };
   const totalBoxStyle = {
-    background: 'rgba(255,255,255,0.08)',
-    borderRadius: '10px',
-    padding: '12px 16px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: '16px',
+    background: 'rgba(255,255,255,0.08)', borderRadius: '10px', padding: '12px 16px',
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px',
   };
   const totalLabelStyle = {
-    fontSize: '11px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.06em',
-    fontWeight: 600,
-    color: 'rgba(255,255,255,0.5)',
+    fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em',
+    fontWeight: 600, color: 'rgba(255,255,255,0.5)',
   };
-  const totalValueStyle = {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: '18px',
-    fontWeight: 700,
-  };
-  const footerStyle = {
-    fontSize: '10px',
-    color: 'rgba(255,255,255,0.3)',
-    marginTop: '14px',
-    textAlign: 'right',
-  };
+  const totalValueStyle = { fontFamily: mono, fontSize: '18px', fontWeight: 700 };
+  const footerStyle = { fontSize: '10px', color: 'rgba(255,255,255,0.3)', marginTop: '14px', textAlign: 'right' };
   const dotStyle = (color) => ({
-    width: '8px',
-    height: '8px',
-    borderRadius: '50%',
-    background: color,
-    flexShrink: 0,
+    width: '8px', height: '8px', borderRadius: '50%', background: color, flexShrink: 0,
   });
 
+  // === STEP 1: Payment Selection ===
+  if (step === 1) {
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+          <h3 className="modal-title">Select Payments to Share</h3>
+          <p style={{ fontSize: '0.8125rem', color: '#64748b', marginBottom: '1rem' }}>
+            Choose which payments to include in the update for Ali.
+          </p>
+
+          <div style={{ flex: 1, overflowY: 'auto', marginBottom: '1rem' }}>
+            {months.map(month => {
+              const monthPayments = monthMap.get(month);
+              const allChecked = monthPayments.every(p => selected.has(p.id));
+              const someChecked = monthPayments.some(p => selected.has(p.id));
+              return (
+                <div key={month} style={{ marginBottom: '1rem' }}>
+                  <div
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem',
+                      cursor: 'pointer', userSelect: 'none',
+                    }}
+                    onClick={() => toggleMonth(monthPayments)}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={allChecked}
+                      ref={el => { if (el) el.indeterminate = someChecked && !allChecked; }}
+                      onChange={() => toggleMonth(monthPayments)}
+                      style={{ accentColor: '#6366f1', width: '16px', height: '16px', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontWeight: 600, fontSize: '0.875rem', color: '#334155' }}>
+                      {fmtDate(month)}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                      ({monthPayments.length} payment{monthPayments.length > 1 ? 's' : ''})
+                    </span>
+                  </div>
+                  {monthPayments.map(p => (
+                    <label
+                      key={p.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '0.625rem',
+                        padding: '0.5rem 0.75rem', marginLeft: '0.25rem',
+                        borderRadius: '8px', cursor: 'pointer',
+                        background: selected.has(p.id) ? '#eef2ff' : 'transparent',
+                        transition: 'background 0.15s',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected.has(p.id)}
+                        onChange={() => togglePayment(p.id)}
+                        style={{ accentColor: '#6366f1', width: '15px', height: '15px', cursor: 'pointer', flexShrink: 0 }}
+                      />
+                      <span style={{
+                        display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+                        background: p.project_color, flexShrink: 0,
+                      }} />
+                      <span style={{ fontWeight: 500, fontSize: '0.875rem', flex: 1 }}>{p.project_name}</span>
+                      <span style={{ fontFamily: mono, fontSize: '0.8125rem', color: '#334155', whiteSpace: 'nowrap' }}>
+                        {fmt(p.egp_amount)} EGP
+                      </span>
+                      <span style={{ fontFamily: mono, fontSize: '0.75rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                        {p.sar_transferred ? `${fmt(p.sar_transferred)} SAR` : '—'}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid #e2e8f0' }}>
+            <span style={{ fontSize: '0.8125rem', color: '#64748b' }}>
+              {selected.size} payment{selected.size !== 1 ? 's' : ''} selected
+            </span>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+              <button className="btn btn-primary" disabled={selected.size === 0} onClick={() => setStep(2)}>
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Compute latest date from selected for the subheader
+  const latestDate = selectedPayments.length > 0
+    ? selectedPayments.reduce((latest, p) => p.date > latest ? p.date : latest, selectedPayments[0].date)
+    : '';
+
+  // === STEP 2: Preview & Share ===
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px', background: '#f1f5f9', padding: '1.5rem' }}>
-        <h3 className="modal-title" style={{ marginBottom: '1rem' }}>Share Update with Ali</h3>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+          <h3 className="modal-title" style={{ margin: 0 }}>Preview &amp; Share</h3>
+          <button className="btn btn-secondary btn-sm" onClick={() => setStep(1)}>&larr; Back</button>
+        </div>
 
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.5rem', overflowX: 'auto' }}>
           <div ref={cardRef} style={cardStyle}>
             <div style={glowStyle} />
 
@@ -280,19 +335,27 @@ export default function ShareUpdate({ onClose, projectId }) {
               <div style={headerStyle}>
                 <span>🏠</span> Egypt Investments Update
               </div>
-              <div style={subHeaderStyle}>Payment — {fmtDate(p.date)}</div>
+              <div style={subHeaderStyle}>
+                {selectedPayments.length === 1 ? 'Payment' : `${selectedPayments.length} Payments`} — {fmtDate(latestDate)}
+              </div>
 
-              <div style={sectionLabelStyle}>Latest Payment</div>
-              <div style={paymentRowStyle}>
-                <div style={projectNameStyle}>
-                  <span style={dotStyle(p.project_color)}>​</span>
-                  <span>✅ {p.project_name}</span>
+              <div style={sectionLabelStyle}>
+                {selectedPayments.length === 1 ? 'Payment' : 'Payments'}
+              </div>
+              {selectedPayments.map(p => (
+                <div key={p.id} style={{ marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: 600 }}>
+                      <span style={dotStyle(p.project_color)}>​</span>
+                      <span>✅ {p.project_name}</span>
+                    </div>
+                    <div style={{ fontFamily: mono, fontSize: '14px', fontWeight: 600 }}>{fmt(p.egp_amount)} EGP</div>
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', fontFamily: mono, paddingLeft: '16px' }}>
+                    {p.sar_transferred ? `${fmt(p.sar_transferred)} SAR @ ${rate(p.egp_amount, p.sar_transferred)}` : '—'}
+                  </div>
                 </div>
-                <div style={amountStyle}>{fmt(p.egp_amount)} EGP</div>
-              </div>
-              <div style={sarSubStyle}>
-                Transferred: {fmt(p.sar_transferred)} SAR @ {rate(p.egp_amount, p.sar_transferred)}
-              </div>
+              ))}
 
               <div style={dividerStyle} />
 
