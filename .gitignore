@@ -1,0 +1,10 @@
+node_modules/
+client/node_modules/
+client/dist/
+src/data/*.db
+src/data/*.db-wal
+src/data/*.db-shm
+.env
+ecosystem.config.js
+*.log
+.DS_Store
