@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
-import { fmtNum, fmtDate, fmtEGP, fmtSAR } from '../utils';
+import { fmtNum, fmtDate } from '../utils';
 import ProgressBar from '../components/ProgressBar';
 
 export default function InvestorView({ user }) {
@@ -11,8 +11,8 @@ export default function InvestorView({ user }) {
     api.getSettlement().then(setData).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>Loading...</div>;
-  if (!data) return <div style={{ padding: '2rem' }}>No data</div>;
+  if (loading) return <div className="loading-screen">Loading settlement...</div>;
+  if (!data) return <div className="empty-state">No settlement data available</div>;
 
   const { summary, projects, transfers } = data;
   const paidPct = summary.ali_50pct_share > 0
@@ -26,15 +26,13 @@ export default function InvestorView({ user }) {
       </div>
 
       <div className="settlement-card">
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.75rem', marginBottom: '1rem' }}>
-          <div>
-            <div className="settlement-title">Ali Owes (Remaining)</div>
-            <div className="settlement-value">{fmtNum(summary.ali_remaining)} SAR</div>
-          </div>
+        <div style={{ marginBottom: '1.25rem' }}>
+          <div className="settlement-title">Outstanding Balance</div>
+          <div className="settlement-value">{fmtNum(summary.ali_remaining)} SAR</div>
         </div>
 
-        <ProgressBar pct={paidPct} color="#22d3ee" />
-        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.375rem' }}>
+        <ProgressBar pct={paidPct} color="#818cf8" />
+        <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.45)', marginTop: '0.5rem', fontWeight: 500 }}>
           {paidPct}% settled &middot; {fmtNum(summary.ali_total_transferred)} / {fmtNum(summary.ali_50pct_share)} SAR
         </div>
 
@@ -71,33 +69,36 @@ export default function InvestorView({ user }) {
       </div>
 
       <div className="section">
-        <h2 className="section-title">Shared Projects</h2>
+        <h2 className="section-title">Shared Properties</h2>
         <div className="project-grid">
           {projects.map(p => {
             const pct = p.total_egp > 0 ? Math.round((p.paid_egp / p.total_egp) * 100) : 0;
             return (
-              <div key={p.id} className="card">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                  <div className="project-dot" style={{ background: p.color }} />
-                  <strong>{p.short_name}</strong>
-                </div>
-                <div className="project-card-stats">
-                  <div>
-                    <div className="project-stat-label">Total EGP</div>
-                    <div className="project-stat-value">{fmtNum(p.total_egp)}</div>
+              <div key={p.id} className="project-card">
+                <div className="project-card-accent" style={{ background: `linear-gradient(90deg, ${p.color}, ${p.color}99)` }} />
+                <div className="project-card-body">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '1rem' }}>
+                    <div className="project-dot" style={{ background: p.color }} />
+                    <strong style={{ fontSize: '1.0625rem', letterSpacing: '-0.01em' }}>{p.short_name}</strong>
                   </div>
-                  <div>
-                    <div className="project-stat-label">Paid EGP</div>
-                    <div className="project-stat-value">{fmtNum(p.paid_egp)}</div>
+                  <div className="project-card-stats" style={{ gridTemplateColumns: '1fr 1fr 1fr' }}>
+                    <div>
+                      <div className="project-stat-label">Total EGP</div>
+                      <div className="project-stat-value">{fmtNum(p.total_egp)}</div>
+                    </div>
+                    <div>
+                      <div className="project-stat-label">Paid EGP</div>
+                      <div className="project-stat-value" style={{ color: '#059669' }}>{fmtNum(p.paid_egp)}</div>
+                    </div>
+                    <div>
+                      <div className="project-stat-label">SAR Transferred</div>
+                      <div className="project-stat-value">{fmtNum(p.paid_sar)}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="project-stat-label">SAR Transferred</div>
-                    <div className="project-stat-value">{fmtNum(p.paid_sar)}</div>
+                  <ProgressBar pct={pct} color={p.color} />
+                  <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.5rem', textAlign: 'right', fontWeight: 500 }}>
+                    {pct}% paid
                   </div>
-                </div>
-                <ProgressBar pct={pct} color={p.color} />
-                <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '0.375rem', textAlign: 'right' }}>
-                  {pct}% paid
                 </div>
               </div>
             );
@@ -106,7 +107,7 @@ export default function InvestorView({ user }) {
       </div>
 
       <div className="section">
-        <h2 className="section-title">Ali's Transfer History</h2>
+        <h2 className="section-title">Transfer History</h2>
         <div className="card">
           <div className="table-wrap">
             <table>
@@ -124,9 +125,12 @@ export default function InvestorView({ user }) {
                     <td className="mono">{fmtDate(t.date)}</td>
                     <td className="mono">{fmtNum(t.sar_amount)}</td>
                     <td>{t.project_group}</td>
-                    <td>{t.note || '—'}</td>
+                    <td style={{ color: '#64748b' }}>{t.note || '—'}</td>
                   </tr>
                 ))}
+                {transfers.length === 0 && (
+                  <tr><td colSpan={4} className="empty-state">No transfers yet</td></tr>
+                )}
               </tbody>
             </table>
           </div>

@@ -2,9 +2,21 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../api';
 import { fmtEGP, fmtSAR, fmtNum, fmtDate, fmtRate, pctOf } from '../utils';
-import KPICard from '../components/KPICard';
 import ProgressBar from '../components/ProgressBar';
 import StatusPill from '../components/StatusPill';
+
+const PROJECT_COLORS = {
+  '#059669': { from: '#059669', to: '#047857' },
+  '#10b981': { from: '#10b981', to: '#059669' },
+  '#0284c7': { from: '#0284c7', to: '#0369a1' },
+  '#7c3aed': { from: '#7c3aed', to: '#6d28d9' },
+  '#dc2626': { from: '#dc2626', to: '#b91c1c' },
+};
+
+function getGradient(color) {
+  const c = PROJECT_COLORS[color] || { from: color || '#6366f1', to: '#4f46e5' };
+  return `linear-gradient(135deg, ${c.from} 0%, ${c.to} 100%)`;
+}
 
 export default function ProjectDetail({ user }) {
   const { id } = useParams();
@@ -19,8 +31,8 @@ export default function ProjectDetail({ user }) {
 
   useEffect(() => { load(); }, [id]);
 
-  if (loading) return <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>Loading...</div>;
-  if (!project) return <div style={{ padding: '2rem' }}>Project not found</div>;
+  if (loading) return <div className="loading-screen">Loading property...</div>;
+  if (!project) return <div className="empty-state">Project not found</div>;
 
   const payments = project.payments || [];
   const totalWithMaint = project.total_egp + (project.maintenance_egp || 0);
@@ -32,51 +44,55 @@ export default function ProjectDetail({ user }) {
 
   return (
     <>
-      <Link to="/" className="back-link">&larr; Back to Dashboard</Link>
+      <Link to="/" className="back-link">&larr; Back to Portfolio</Link>
 
       <div className="project-hero">
-        <div className="project-hero-top">
-          <div className="project-hero-dot" style={{ background: project.color }} />
-          <div>
-            <div className="project-hero-name">{project.name}</div>
-            <div style={{ fontSize: '0.8125rem', color: '#64748b' }}>
-              {project.developer} &middot; {project.type} &middot; {project.location}
-              {project.shared ? <span className="pill pill-shared" style={{ marginLeft: 8 }}>50/50 with {project.partner_name}</span> : null}
+        <div className="project-hero-gradient" style={{ background: getGradient(project.color) }}>
+          <div className="project-hero-top">
+            <div className="project-hero-dot" />
+            <div>
+              <div className="project-hero-name">{project.name}</div>
+              <div className="project-hero-meta">
+                {project.developer} &middot; {project.type} &middot; {project.location}
+                {project.shared ? <span className="pill pill-shared" style={{ marginLeft: 10, fontSize: '0.625rem' }}>50/50 with {project.partner_name}</span> : null}
+              </div>
             </div>
           </div>
         </div>
-        <div className="project-hero-stats">
-          <div>
-            <div className="kpi-label">Total Price</div>
-            <div className="kpi-value" style={{ fontSize: '1.25rem' }}>{fmtEGP(totalWithMaint)}</div>
-            {project.maintenance_egp > 0 && <div className="kpi-sub">incl. {fmtEGP(project.maintenance_egp)} maintenance</div>}
+        <div className="project-hero-body">
+          <div className="project-hero-stats">
+            <div>
+              <div className="kpi-label">Total Price</div>
+              <div className="kpi-value" style={{ fontSize: '1.25rem' }}>{fmtEGP(totalWithMaint)}</div>
+              {project.maintenance_egp > 0 && <div className="kpi-sub">incl. {fmtEGP(project.maintenance_egp)} maintenance</div>}
+            </div>
+            <div>
+              <div className="kpi-label">Paid</div>
+              <div className="kpi-value" style={{ fontSize: '1.25rem', color: '#059669' }}>{fmtEGP(paidEGP)}</div>
+              <div className="kpi-sub">{paidPct}% complete</div>
+            </div>
+            <div>
+              <div className="kpi-label">SAR Transferred</div>
+              <div className="kpi-value" style={{ fontSize: '1.25rem' }}>{fmtSAR(paidSAR)}</div>
+            </div>
+            <div>
+              <div className="kpi-label">Remaining</div>
+              <div className="kpi-value" style={{ fontSize: '1.25rem', color: '#dc2626' }}>{fmtEGP(remainingEGP)}</div>
+            </div>
+            <div>
+              <div className="kpi-label">Due Now</div>
+              <div className="kpi-value" style={{ fontSize: '1.25rem', color: '#d97706' }}>{fmtEGP(dueEGP)}</div>
+            </div>
           </div>
-          <div>
-            <div className="kpi-label">Paid</div>
-            <div className="kpi-value" style={{ fontSize: '1.25rem', color: '#059669' }}>{fmtEGP(paidEGP)}</div>
-            <div className="kpi-sub">{paidPct}%</div>
+          <ProgressBar pct={paidPct} color={project.color} />
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginTop: '1rem', fontSize: '0.8125rem', color: '#94a3b8', fontWeight: 500 }}>
+            {project.payment_plan && <span>Plan: {project.payment_plan}</span>}
+            {project.advance_pct && <span>Advance: {project.advance_pct}</span>}
+            {project.start_date && <span>Started: {project.start_date}</span>}
+            {project.unit_no && <span>Unit: {project.unit_no}</span>}
+            {project.bedrooms && <span>{project.bedrooms} BR</span>}
+            {project.area && <span>{project.area}</span>}
           </div>
-          <div>
-            <div className="kpi-label">SAR Transferred</div>
-            <div className="kpi-value" style={{ fontSize: '1.25rem' }}>{fmtSAR(paidSAR)}</div>
-          </div>
-          <div>
-            <div className="kpi-label">Remaining</div>
-            <div className="kpi-value" style={{ fontSize: '1.25rem', color: '#dc2626' }}>{fmtEGP(remainingEGP)}</div>
-          </div>
-          <div>
-            <div className="kpi-label">Due Now</div>
-            <div className="kpi-value" style={{ fontSize: '1.25rem', color: '#d97706' }}>{fmtEGP(dueEGP)}</div>
-          </div>
-        </div>
-        <ProgressBar pct={paidPct} color={project.color} />
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginTop: '1rem', fontSize: '0.8125rem', color: '#64748b' }}>
-          {project.payment_plan && <span>Plan: {project.payment_plan}</span>}
-          {project.advance_pct && <span>Advance: {project.advance_pct}</span>}
-          {project.start_date && <span>Started: {project.start_date}</span>}
-          {project.unit_no && <span>Unit: {project.unit_no}</span>}
-          {project.bedrooms && <span>{project.bedrooms} BR</span>}
-          {project.area && <span>{project.area}</span>}
         </div>
       </div>
 
@@ -108,7 +124,7 @@ export default function ProjectDetail({ user }) {
                   <td className="mono">{fmtNum(p.egp_amount)}</td>
                   <td className="mono">{p.sar_transferred ? fmtNum(p.sar_transferred) : '—'}</td>
                   <td className="mono">{fmtRate(p.egp_amount, p.sar_transferred)}</td>
-                  <td>{p.note}</td>
+                  <td style={{ color: '#64748b' }}>{p.note}</td>
                   <td><StatusPill status={p.status} /></td>
                   {user.role === 'owner' && (
                     <td>
@@ -117,6 +133,9 @@ export default function ProjectDetail({ user }) {
                   )}
                 </tr>
               ))}
+              {payments.length === 0 && (
+                <tr><td colSpan={user.role === 'owner' ? 7 : 6} className="empty-state">No payments yet</td></tr>
+              )}
             </tbody>
           </table>
         </div>

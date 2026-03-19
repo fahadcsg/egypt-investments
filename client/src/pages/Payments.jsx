@@ -16,7 +16,7 @@ export default function Payments({ user }) {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div style={{ padding: '2rem', textAlign: 'center', color: '#64748b' }}>Loading...</div>;
+  if (loading) return <div className="loading-screen">Loading payments...</div>;
 
   let filtered = payments;
   if (filterProject) filtered = filtered.filter(p => p.project_id === filterProject);
@@ -43,7 +43,7 @@ export default function Payments({ user }) {
           <option value="UPCOMING">UPCOMING</option>
           <option value="OVERDUE">OVERDUE</option>
         </select>
-        <span style={{ fontSize: '0.8125rem', color: '#64748b' }}>
+        <span style={{ fontSize: '0.8125rem', color: '#94a3b8', fontWeight: 500 }}>
           {filtered.length} payments &middot; EGP {fmtNum(totalEGP)} {totalSAR > 0 && `· SAR ${fmtNum(totalSAR)}`}
         </span>
       </div>
@@ -67,18 +67,18 @@ export default function Payments({ user }) {
                 <tr key={p.id}>
                   <td className="mono">{fmtDate(p.date)}</td>
                   <td>
-                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: p.project_color, marginRight: 6 }} />
+                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: p.project_color, marginRight: 8, boxShadow: `0 0 0 2px ${p.project_color}33` }} />
                     {p.project_name}
                   </td>
                   <td className="mono">{fmtNum(p.egp_amount)}</td>
                   <td className="mono">{p.sar_transferred ? fmtNum(p.sar_transferred) : '—'}</td>
                   <td className="mono">{fmtRate(p.egp_amount, p.sar_transferred)}</td>
-                  <td>{p.note}</td>
+                  <td style={{ color: '#64748b' }}>{p.note}</td>
                   <td><StatusPill status={p.status} /></td>
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>No payments found</td></tr>
+                <tr><td colSpan={7} className="empty-state">No payments found</td></tr>
               )}
             </tbody>
           </table>
